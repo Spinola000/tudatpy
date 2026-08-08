@@ -81,7 +81,7 @@ OrbitDeterminationManager< ObservationScalarType, TimeType, Dummy >::computeCova
 
     // Compute inverse of updated covariance
     Eigen::MatrixXd inverseNormalizedCovariance = linear_algebra::calculateInverseOfUpdatedCovarianceMatrix(
-            designMatrixEstimatedParameters.block( 0, 0, designMatrixEstimatedParameters.rows( ), numberEstimatedParameters_ ),
+            designMatrixEstimatedParameters,
             estimationInput->getWeightsMatrixDiagonals( ),
             normalizedInverseAprioriCovarianceMatrix,
             constraintStateMultiplier,
