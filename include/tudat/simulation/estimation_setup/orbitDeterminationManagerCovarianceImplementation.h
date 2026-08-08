@@ -12,6 +12,7 @@
 #define TUDAT_ORBITDETERMINATIONMANAGERCOVARIANCEIMPLEMENTATION_H
 
 #include <iostream>
+#include <utility>
 
 #include "tudat/astro/orbit_determination/podInputOutputTypes.h"
 #include "tudat/math/basic/leastSquaresEstimation.h"
@@ -50,9 +51,9 @@ OrbitDeterminationManager< ObservationScalarType, TimeType, Dummy >::computeCova
     std::pair< std::pair< Eigen::MatrixXd, Eigen::MatrixXd >, Eigen::Matrix< ObservationScalarType, Eigen::Dynamic, 1 > >
             designMatricesAndResiduals =
                     performPreEstimationSteps( estimationInput, parameterValues, false, 0, exceptionDuringPropagation, simulationResults );
-    Eigen::MatrixXd designMatrixEstimatedParameters = designMatricesAndResiduals.first.first;
+    Eigen::MatrixXd designMatrixEstimatedParameters = std::move( designMatricesAndResiduals.first.first );
     Eigen::MatrixXd designMatrixConsiderParameters;
-    designMatrixConsiderParameters = designMatricesAndResiduals.first.second;
+    designMatrixConsiderParameters = std::move( designMatricesAndResiduals.first.second );
 
     // Normalise partials and inverse a priori covariance
     Eigen::VectorXd normalizationTerms = normalizeDesignMatrix( designMatrixEstimatedParameters );
