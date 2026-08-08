@@ -122,6 +122,38 @@ public:
             const bool addCentralBodyDependency = true,
             const std::vector< std::string >& arcDefiningBodies = std::vector< std::string >( ) ) = 0;
 
+    //! Function to get a block of rows of the full concatenated state transition and sensitivity matrix at a given time.
+    /*!
+     *  Function to get a block of rows of the full concatenated state transition and sensitivity matrix at a given time,
+     *  equal to getFullCombinedStateTransitionAndSensitivityMatrix( evaluationTime, ... ).block( startRow, 0, numberOfRows,
+     *  fullColumns ). This base implementation evaluates the full matrix and extracts the rows; derived classes may
+     *  override it to compute only the requested rows, which avoids assembling the (typically much larger, mostly zero)
+     *  full matrix when only the rows of a single body are needed (e.g. for observation partials).
+     *  \param evaluationTime Time at which to evaluate matrix interpolators
+     *  \param startRow First row of the full matrix to return
+     *  \param numberOfRows Number of rows of the full matrix to return
+     *  \return Requested rows of the full concatenated state transition and sensitivity matrices.
+     */
+    virtual Eigen::MatrixXd getFullCombinedStateTransitionAndSensitivityMatrixBlock(
+            const double evaluationTime,
+            const int startRow,
+            const int numberOfRows,
+            const bool addCentralBodyDependency = true,
+            const std::vector< std::string >& arcDefiningBodies = std::vector< std::string >( ) )
+    {
+        Eigen::MatrixXd fullCombinedStateTransitionMatrix =
+                getFullCombinedStateTransitionAndSensitivityMatrix( evaluationTime, addCentralBodyDependency, arcDefiningBodies );
+        if( startRow < 0 || numberOfRows < 0 || startRow + numberOfRows > fullCombinedStateTransitionMatrix.rows( ) )
+        {
+            throw std::runtime_error(
+                    "Error when getting block of full combined state transition and sensitivity matrix, requested rows [" +
+                    std::to_string( startRow ) + ", " + std::to_string( startRow + numberOfRows ) +
+                    ") are incompatible with matrix row size " +
+                    std::to_string( fullCombinedStateTransitionMatrix.rows( ) ) + "." );
+        }
+        return fullCombinedStateTransitionMatrix.block( startRow, 0, numberOfRows, fullCombinedStateTransitionMatrix.cols( ) );
+    }
+
     //! Function to get the size of state transition matrix
     /*!
      * Function to get the size of state transition matrix
@@ -658,6 +690,119 @@ public:
             }
         }
         return fullCombinedStateTransitionMatrix;
+    }
+
+    //! Function to get a block of rows of the full concatenated state transition and sensitivity matrix at a given time.
+    /*!
+     *  Function to get a block of rows of the full concatenated state transition and sensitivity matrix at a given time.
+     *  Equal to the same rows of getFullCombinedStateTransitionAndSensitivityMatrix, but only the requested rows are
+     *  assembled, so the (mostly zero) full matrix is never allocated. Row placement mirrors
+     *  getFullCombinedStateTransitionAndSensitivityMatrix exactly, with each block assignment clipped to the requested rows.
+     *  \param evaluationTime Time at which to evaluate matrix interpolators
+     *  \param startRow First row of the full matrix to return
+     *  \param numberOfRows Number of rows of the full matrix to return
+     *  \return Requested rows of the full concatenated state transition and sensitivity matrices.
+     */
+    Eigen::MatrixXd getFullCombinedStateTransitionAndSensitivityMatrixBlock(
+            const double evaluationTime,
+            const int startRow,
+            const int numberOfRows,
+            const bool addCentralBodyDependency = true,
+            const std::vector< std::string >& arcDefiningBodies = std::vector< std::string >( ) )
+    {
+        if( startRow < 0 || numberOfRows < 0 || startRow + numberOfRows > fullStateSize_ )
+        {
+            throw std::runtime_error(
+                    "Error when getting block of full combined multi-arc state transition and sensitivity matrix, requested rows [" +
+                    std::to_string( startRow ) + ", " + std::to_string( startRow + numberOfRows ) +
+                    ") are incompatible with matrix row size " + std::to_string( fullStateSize_ ) + "." );
+        }
+
+        Eigen::MatrixXd combinedStateTransitionMatrix =
+                getCombinedStateTransitionAndSensitivityMatrix( evaluationTime, addCentralBodyDependency, arcDefiningBodies );
+        Eigen::MatrixXd fullCombinedStateTransitionMatrixBlock =
+                Eigen::MatrixXd::Zero( numberOfRows, fullStateTransitionMatrixSize_ + fullSensitivityMatrixSize_ );
+
+        int currentArc = getCurrentArc( evaluationTime ).first;
+
+        std::vector< int > currentArcsDefinedByEachBody;
+
+        for( unsigned int i = 0; i < arcDefiningBodies.size( ); i++ )
+        {
+            std::pair< int, double > currentArcDefinedByBody = getCurrentArc( evaluationTime, arcDefiningBodies.at( i ) );
+
+            currentArcsDefinedByEachBody.push_back( currentArcDefinedByBody.first );
+        }
+        for( unsigned int i = 0; i < currentArcsDefinedByEachBody.size( ); i++ )
+        {
+            if( ( currentArcsDefinedByEachBody[ i ] != currentArcsDefinedByEachBody[ 0 ] ) && ( currentArcsDefinedByEachBody[ i ] != -1 ) &&
+                ( currentArcsDefinedByEachBody[ 0 ] != -1 ) )
+            {
+                throw std::runtime_error( "Error when getting current arc, different definitions for bodies " + arcDefiningBodies.at( i ) +
+                                          " & " + arcDefiningBodies.at( 0 ) + "." );
+            }
+            if( currentArcsDefinedByEachBody[ i ] != -1 )
+            {
+                currentArc = currentArcsDefinedByEachBody[ i ];
+            }
+        }
+
+        // Set Phi and S matrices of current arc.
+        if( currentArc >= 0 )
+        {
+            std::map< std::string, std::pair< std::pair< int, int >, std::pair< std::pair< int, int >, int > > >
+                    arcWiseAndFullSolutionIndices = arcWiseAndFullSolutionInitialStateIndices_.at( currentArc );
+            for( auto itr : arcWiseAndFullSolutionIndices )
+            {
+                std::pair< int, int > indicesInArcWiseSolution = itr.second.first;
+                std::pair< std::pair< int, int >, int > indicesInFullSolution = itr.second.second;
+                int indexInFullState = indicesInFullSolution.first.first;
+                int indexInFullMatrix = indicesInFullSolution.first.second;
+                int sizeInFullSolution = indicesInFullSolution.second;
+
+                setRowClippedBlock( fullCombinedStateTransitionMatrixBlock,
+                                    startRow,
+                                    indexInFullState,
+                                    indexInFullMatrix,
+                                    sizeInFullSolution,
+                                    sizeInFullSolution,
+                                    combinedStateTransitionMatrix,
+                                    indicesInArcWiseSolution.first,
+                                    indicesInArcWiseSolution.first );
+
+                for( auto itr2 : arcWiseAndFullSolutionIndices )
+                {
+                    if( itr2.first != itr.first )
+                    {
+                        std::pair< int, int > indicesInArcWiseSolutionOtherBody = itr2.second.first;
+                        std::pair< std::pair< int, int >, int > indicesInFullSolutionOtherBody = itr2.second.second;
+                        int indexInFullMatrixOtherBody = indicesInFullSolutionOtherBody.first.second;
+                        int sizeInFullSolutionOtherBody = indicesInFullSolutionOtherBody.second;
+
+                        setRowClippedBlock( fullCombinedStateTransitionMatrixBlock,
+                                            startRow,
+                                            indexInFullState,
+                                            indexInFullMatrixOtherBody,
+                                            indicesInFullSolution.second,
+                                            sizeInFullSolutionOtherBody,
+                                            combinedStateTransitionMatrix,
+                                            indicesInArcWiseSolution.first,
+                                            indicesInArcWiseSolutionOtherBody.first );
+                    }
+                }
+
+                setRowClippedBlock( fullCombinedStateTransitionMatrixBlock,
+                                    startRow,
+                                    indexInFullState,
+                                    fullStateTransitionMatrixSize_,
+                                    indicesInFullSolution.second,
+                                    fullSensitivityMatrixSize_,
+                                    combinedStateTransitionMatrix,
+                                    indicesInArcWiseSolution.first,
+                                    arcWiseStateTransitionMatrixSize_[ currentArc ] );
+            }
+        }
+        return fullCombinedStateTransitionMatrixBlock;
     }
 
     //! Function to retrieve the current arc for a given time
@@ -1290,6 +1435,191 @@ public:
         }
 
         return fullCombinedStateTransitionMatrix;
+    }
+
+    //! Function to get a block of rows of the full concatenated state transition and sensitivity matrix at a given time.
+    /*!
+     *  Function to get a block of rows of the full concatenated state transition and sensitivity matrix at a given time.
+     *  Equal to the same rows of getFullCombinedStateTransitionAndSensitivityMatrix, but only the requested rows are
+     *  assembled, so the (mostly zero) full matrix is never allocated. Row placement mirrors
+     *  getFullCombinedStateTransitionAndSensitivityMatrix exactly, with each block assignment clipped to the requested rows.
+     *  \param evaluationTime Time at which to evaluate matrix interpolators
+     *  \param startRow First row of the full matrix to return
+     *  \param numberOfRows Number of rows of the full matrix to return
+     *  \return Requested rows of the full concatenated state transition and sensitivity matrices.
+     */
+    Eigen::MatrixXd getFullCombinedStateTransitionAndSensitivityMatrixBlock(
+            const double evaluationTime,
+            const int startRow,
+            const int numberOfRows,
+            const bool addCentralBodyDependency = true,
+            const std::vector< std::string >& arcDefiningBodies = std::vector< std::string >( ) )
+    {
+        if( startRow < 0 || numberOfRows < 0 || startRow + numberOfRows > multiArcInterface_->getFullStateSize( ) )
+        {
+            throw std::runtime_error(
+                    "Error when getting block of full combined hybrid-arc state transition and sensitivity matrix, requested rows [" +
+                    std::to_string( startRow ) + ", " + std::to_string( startRow + numberOfRows ) +
+                    ") are incompatible with matrix row size " + std::to_string( multiArcInterface_->getFullStateSize( ) ) + "." );
+        }
+
+        int fullStateTransitionMatrixSize =
+                multiArcInterface_->getFullStateTransitionMatrixSize( ) - singleArcStateSize_ * ( numberOfMultiArcs_ - 1 );
+        int fullSensitivityMatrixSize = multiArcInterface_->getFullSensitivityMatrixSize( );
+
+        Eigen::MatrixXd combinedStateTransitionMatrix =
+                getCombinedStateTransitionAndSensitivityMatrix( evaluationTime, addCentralBodyDependency, arcDefiningBodies );
+        Eigen::MatrixXd fullCombinedStateTransitionMatrixBlock = Eigen::MatrixXd::Zero(
+                numberOfRows,
+                multiArcInterface_->getFullStateTransitionMatrixSize( ) + multiArcInterface_->getFullSensitivityMatrixSize( ) -
+                        singleArcStateSize_ * ( numberOfMultiArcs_ - 1 ) );
+        std::pair< int, double > currentArc = multiArcInterface_->getCurrentArc( evaluationTime );
+
+        std::vector< std::pair< int, double > > currentArcsDefinedByEachBody;
+        for( unsigned int i = 0; i < arcDefiningBodies.size( ); i++ )
+        {
+            std::pair< int, double > currentArcDefinedByBody =
+                    multiArcInterface_->getCurrentArc( evaluationTime, arcDefiningBodies.at( i ) );
+            currentArcsDefinedByEachBody.push_back( currentArcDefinedByBody );
+        }
+        for( unsigned int i = 0; i < currentArcsDefinedByEachBody.size( ); i++ )
+        {
+            if( ( currentArcsDefinedByEachBody[ i ] != currentArcsDefinedByEachBody[ 0 ] ) &&
+                ( currentArcsDefinedByEachBody[ i ].first != -1 ) && ( currentArcsDefinedByEachBody[ 0 ].first != -1 ) )
+            {
+                throw std::runtime_error( "Error when getting current arc, different definitions for bodies " + arcDefiningBodies.at( i ) +
+                                          " & " + arcDefiningBodies.at( 0 ) + "." );
+            }
+            if( currentArcsDefinedByEachBody[ i ].first != -1 )
+            {
+                currentArc.first = currentArcsDefinedByEachBody[ i ].first;
+                currentArc.second = currentArcsDefinedByEachBody[ i ].second;
+            }
+        }
+
+        int stateTransitionMatrixSize = singleArcInterface_->getStateTransitionMatrixSize( );
+        if( currentArc.first >= 0 )
+        {
+            stateTransitionMatrixSize = multiArcInterface_->getArcWiseStateTransitionMatrixSize( currentArc.first );
+        }
+        int multiArcStateSize = stateTransitionMatrixSize;
+
+        // Set single-arc block
+        setRowClippedBlock( fullCombinedStateTransitionMatrixBlock,
+                            startRow,
+                            0,
+                            0,
+                            singleArcStateSize_,
+                            singleArcStateSize_,
+                            combinedStateTransitionMatrix,
+                            0,
+                            0 );
+
+        // Set single-arc sensitivity block
+        setRowClippedBlock( fullCombinedStateTransitionMatrixBlock,
+                            startRow,
+                            0,
+                            multiArcInterface_->getFullStateTransitionMatrixSize( ) - singleArcStateSize_ * ( numberOfMultiArcs_ - 1 ),
+                            singleArcStateSize_,
+                            sensitivityMatrixSize_,
+                            combinedStateTransitionMatrix,
+                            0,
+                            multiArcStateSize );
+
+        // Set Phi and S matrices of current arc.
+        if( currentArc.first >= 0 )
+        {
+            std::map< std::string, std::pair< std::pair< int, int >, std::pair< std::pair< int, int >, int > > >
+                    arcWiseAndFullSolutionIndices =
+                            multiArcInterface_->getArcWiseAndFullSolutionInitialStateIndices( ).at( currentArc.first );
+
+            // Set multi-arc block
+            for( auto itr : arcWiseAndFullSolutionIndices )
+            {
+                std::pair< int, int > indicesInArcWiseSolution = itr.second.first;
+                std::pair< std::pair< int, int >, int > indicesInFullSolution = itr.second.second;
+                int indexInFullState = indicesInFullSolution.first.first;
+                int indexInFullMatrix = indicesInFullSolution.first.second;
+
+                int sizeInFullSolution = indicesInFullSolution.second;
+
+                if( indexInFullMatrix <= singleArcStateSize_ * numberOfMultiArcs_ )
+                {
+                    indexInFullMatrix = indexInFullState;
+                }
+                else
+                {
+                    indexInFullMatrix -= singleArcStateSize_ * ( numberOfMultiArcs_ - 1 );
+                }
+
+                // Set multi-arc block (self)
+                setRowClippedBlock( fullCombinedStateTransitionMatrixBlock,
+                                    startRow,
+                                    indexInFullState,
+                                    indexInFullMatrix,
+                                    sizeInFullSolution,
+                                    sizeInFullSolution,
+                                    combinedStateTransitionMatrix,
+                                    indicesInArcWiseSolution.first,
+                                    indicesInArcWiseSolution.first );
+
+                // Set coupled block
+                setRowClippedBlock( fullCombinedStateTransitionMatrixBlock,
+                                    startRow,
+                                    indexInFullState,
+                                    0,
+                                    sizeInFullSolution,
+                                    sizeInFullSolution,
+                                    combinedStateTransitionMatrix,
+                                    indicesInArcWiseSolution.first,
+                                    0 );
+
+                // Set multi-arc sensitivity block
+                setRowClippedBlock( fullCombinedStateTransitionMatrixBlock,
+                                    startRow,
+                                    indexInFullState,
+                                    fullStateTransitionMatrixSize,
+                                    indicesInFullSolution.second,
+                                    fullSensitivityMatrixSize,
+                                    combinedStateTransitionMatrix,
+                                    indicesInArcWiseSolution.first,
+                                    multiArcInterface_->getArcWiseStateTransitionMatrixSize( currentArc.first ) );
+
+                // Set multi-arc block (other bodies)
+                for( auto itr2 : arcWiseAndFullSolutionIndices )
+                {
+                    if( itr2.first != itr.first )
+                    {
+                        std::pair< int, int > indicesInArcWiseSolutionOtherBody = itr2.second.first;
+                        std::pair< std::pair< int, int >, int > indicesInFullSolutionOtherBody = itr2.second.second;
+                        int indexInFullStateOtherBody = indicesInFullSolutionOtherBody.first.first;
+                        int indexInFullMatrixOtherBody = indicesInFullSolutionOtherBody.first.second;
+                        int sizeInFullSolutionOtherBody = indicesInFullSolutionOtherBody.second;
+
+                        if( indexInFullMatrixOtherBody <= singleArcStateSize_ * numberOfMultiArcs_ )
+                        {
+                            indexInFullMatrixOtherBody = indexInFullStateOtherBody;
+                        }
+                        else
+                        {
+                            indexInFullMatrixOtherBody -= singleArcStateSize_ * ( numberOfMultiArcs_ - 1 );
+                        }
+
+                        setRowClippedBlock( fullCombinedStateTransitionMatrixBlock,
+                                            startRow,
+                                            indexInFullState,
+                                            indexInFullMatrixOtherBody,
+                                            indicesInFullSolution.second,
+                                            sizeInFullSolutionOtherBody,
+                                            combinedStateTransitionMatrix,
+                                            indicesInArcWiseSolution.first,
+                                            indicesInArcWiseSolutionOtherBody.first );
+                    }
+                }
+            }
+        }
+
+        return fullCombinedStateTransitionMatrixBlock;
     }
 
 private:
