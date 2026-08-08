@@ -11,6 +11,7 @@
 #ifndef TUDAT_STATETRANSITIONMATRIXINTERFACE_H
 #define TUDAT_STATETRANSITIONMATRIXINTERFACE_H
 
+#include <algorithm>
 #include <iostream>
 #include <vector>
 
@@ -28,6 +29,49 @@ namespace tudat
 
 namespace propagators
 {
+
+//! Function to copy the rows of a block assignment that fall inside a requested row window.
+/*!
+ *  Function to copy the rows of a block assignment that fall inside a requested row window. Performs the row-clipped
+ *  equivalent of
+ *  fullMatrix.block( targetStartRow, targetStartColumn, numberOfBlockRows, numberOfBlockColumns ) =
+ *  sourceMatrix.block( sourceStartRow, sourceStartColumn, numberOfBlockRows, numberOfBlockColumns ),
+ *  where rowBlockMatrix holds only rows [ firstRowOfRowBlockMatrix, firstRowOfRowBlockMatrix + rowBlockMatrix.rows( ) ) of
+ *  fullMatrix. Rows of the assignment outside the window are skipped; column placement is unchanged.
+ *  \param rowBlockMatrix Matrix holding the requested row window of the full matrix (return by reference)
+ *  \param firstRowOfRowBlockMatrix Row of the full matrix to which the first row of rowBlockMatrix corresponds
+ *  \param targetStartRow First row of the assignment target in the full matrix
+ *  \param targetStartColumn First column of the assignment target
+ *  \param numberOfBlockRows Number of rows of the assigned block
+ *  \param numberOfBlockColumns Number of columns of the assigned block
+ *  \param sourceMatrix Matrix from which the block is copied
+ *  \param sourceStartRow First row of the copied block in sourceMatrix
+ *  \param sourceStartColumn First column of the copied block in sourceMatrix
+ */
+inline void setRowClippedBlock( Eigen::MatrixXd& rowBlockMatrix,
+                                const int firstRowOfRowBlockMatrix,
+                                const int targetStartRow,
+                                const int targetStartColumn,
+                                const int numberOfBlockRows,
+                                const int numberOfBlockColumns,
+                                const Eigen::MatrixXd& sourceMatrix,
+                                const int sourceStartRow,
+                                const int sourceStartColumn )
+{
+    const int firstCopiedRow = std::max( targetStartRow, firstRowOfRowBlockMatrix );
+    const int lastCopiedRowExclusive = std::min( targetStartRow + numberOfBlockRows,
+                                                 firstRowOfRowBlockMatrix + static_cast< int >( rowBlockMatrix.rows( ) ) );
+    if( firstCopiedRow < lastCopiedRowExclusive )
+    {
+        rowBlockMatrix.block( firstCopiedRow - firstRowOfRowBlockMatrix,
+                              targetStartColumn,
+                              lastCopiedRowExclusive - firstCopiedRow,
+                              numberOfBlockColumns ) = sourceMatrix.block( sourceStartRow + ( firstCopiedRow - targetStartRow ),
+                                                                           sourceStartColumn,
+                                                                           lastCopiedRowExclusive - firstCopiedRow,
+                                                                           numberOfBlockColumns );
+    }
+}
 
 //! Base class for interface object of interpolation of numerically propagated state transition and sensitivity matrices.
 /*!
