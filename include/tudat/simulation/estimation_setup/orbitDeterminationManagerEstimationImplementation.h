@@ -12,6 +12,7 @@
 #define TUDAT_ORBITDETERMINATIONMANAGERESTIMATIONIMPLEMENTATION_H
 
 #include <iostream>
+#include <utility>
 #include <stdexcept>
 
 #include "tudat/astro/observation_models/observationManager.h"
@@ -110,9 +111,9 @@ OrbitDeterminationManager< ObservationScalarType, TimeType, Dummy >::estimatePar
                 designMatricesAndResiduals = performPreEstimationSteps(
                         estimationInput, newParameterEstimate, true, numberOfIterations, exceptionDuringPropagation, simulationResults );
         Eigen::Matrix< ObservationScalarType, Eigen::Dynamic, 1 > residuals = designMatricesAndResiduals.second;
-        Eigen::MatrixXd designMatrixEstimatedParameters = designMatricesAndResiduals.first.first;
+        Eigen::MatrixXd designMatrixEstimatedParameters = std::move( designMatricesAndResiduals.first.first );
         Eigen::MatrixXd designMatrixConsiderParameters;
-        designMatrixConsiderParameters = designMatricesAndResiduals.first.second;
+        designMatrixConsiderParameters = std::move( designMatricesAndResiduals.first.second );
 
         // Set simulation results
         if( estimationInput->getSaveStateHistoryForEachIteration( ) )
