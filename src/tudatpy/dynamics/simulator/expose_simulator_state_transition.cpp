@@ -100,6 +100,40 @@ void expose_simulator_state_transition_bindings( py::module& m )
 
 
      )doc" )
+            .def( "full_state_transition_sensitivity_block_at_epoch",
+                  &tp::CombinedStateTransitionAndSensitivityMatrixInterface::getFullCombinedStateTransitionAndSensitivityMatrixBlock,
+                  py::arg( "time" ),
+                  py::arg( "start_row" ),
+                  py::arg( "number_of_rows" ),
+                  py::arg( "add_central_body_dependency" ) = true,
+                  py::arg( "arc_defining_bodies" ) = std::vector< std::string >( ),
+                  R"doc(
+
+         Function to get a block of rows of the full concatenated state transition and sensitivity matrix at a given time.
+
+         Function to get a block of rows of the full concatenated state transition and sensitivity matrix at a given time,
+         equal to the same rows of :meth:`full_state_transition_sensitivity_at_epoch`. For multi- and hybrid-arc dynamics
+         only the requested rows are assembled, avoiding the allocation of the full (mostly zero) matrix.
+
+
+         Parameters
+         ----------
+         time : astro.time_representation.Time
+             Time at which the block is to be retrieved.
+         start_row : int
+             First row of the full matrix to return.
+         number_of_rows : int
+             Number of rows of the full matrix to return.
+         Returns
+         -------
+         numpy.ndarray[numpy.float64[m, n]]
+             Requested rows of the full concatenated state transition and sensitivity matrix.
+
+
+
+
+
+     )doc" )
             .def_property_readonly( "state_transition_size",
                                     &tp::CombinedStateTransitionAndSensitivityMatrixInterface::getStateTransitionMatrixSize,
                                     R"doc(
