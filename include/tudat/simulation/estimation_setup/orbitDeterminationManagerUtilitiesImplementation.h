@@ -12,6 +12,7 @@
 #define TUDAT_ORBITDETERMINATIONMANAGERUTILITIESIMPLEMENTATION_H
 
 #include <cmath>
+#include <utility>
 #include <stdexcept>
 #include <string>
 
@@ -172,7 +173,7 @@ OrbitDeterminationManager< ObservationScalarType, TimeType, Dummy >::separateEst
     Eigen::MatrixXd designMatrixConsiderParameters =
             designMatrix.block( 0, numberEstimatedParameters_, numberObservations, numberConsiderParameters_ );
 
-    return std::make_pair( designMatrixEstimatedParameters, designMatrixConsiderParameters );
+    return std::make_pair( std::move( designMatrixEstimatedParameters ), std::move( designMatrixConsiderParameters ) );
 }
 
 }  // namespace simulation_setup
