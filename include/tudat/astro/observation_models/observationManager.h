@@ -415,8 +415,10 @@ protected:
         Eigen::Matrix< double, ObservationSize, Eigen::Dynamic > partialMatrix =
                 Eigen::MatrixXd::Zero( observationSize, fullParameterVector );
 
-        // Initialize list of [Phi;S] matrices at times required by calculation (key)
-        std::map< double, Eigen::MatrixXd > combinedStateTransitionMatrices;
+        // Initialize list of [Phi;S] matrix row blocks at the times and state indices required by calculation (key).
+        // Only the rows of the state whose partial is being added are retrieved, so the full matrix is never assembled.
+        // The state indices are part of the key: unlike a full matrix, a row block cannot serve a different state.
+        std::map< std::pair< double, std::pair< int, int > >, Eigen::MatrixXd > combinedStateTransitionMatrixBlocks;
 
         // Perform updates of dependent variables used by (subset of) observation partials.
         updatePartials( states, times, linkEnds, linkEndAssociatedWithTime, currentObservation );
@@ -468,18 +470,22 @@ protected:
             {
                 for( unsigned int i = 0; i < singlePartialSet.size( ); i++ )
                 {
-                    // Evaluate [Phi;S] matrix at each time instant associated with partial, if not yet evaluated.
-                    if( combinedStateTransitionMatrices.count( singlePartialSet[ i ].second ) == 0 )
+                    // Evaluate rows of [Phi;S] matrix belonging to current state, at each time instant associated with
+                    // partial, if not yet evaluated.
+                    std::pair< double, std::pair< int, int > > currentBlockKey =
+                            std::make_pair( singlePartialSet[ i ].second, currentIndexInfo );
+                    if( combinedStateTransitionMatrixBlocks.count( currentBlockKey ) == 0 )
                     {
-                        combinedStateTransitionMatrices[ singlePartialSet[ i ].second ] =
-                                this->getCombinedStateTransitionAndSensitivityMatrix( singlePartialSet[ i ].second,
-                                                                                      bodiesOfInterestInLinkEnds /*bodiesInLinkEnds*/ );
+                        combinedStateTransitionMatrixBlocks[ currentBlockKey ] =
+                                this->getCombinedStateTransitionAndSensitivityMatrixBlock(
+                                        singlePartialSet[ i ].second,
+                                        currentIndexInfo.first,
+                                        currentIndexInfo.second,
+                                        bodiesOfInterestInLinkEnds /*bodiesInLinkEnds*/ );
                     }
 
                     // Add partial of observation h w.r.t. initial state x_{0} (dh/dx_{0}=dh/dx*dx/dx_{0})
-                    partialMatrix += ( singlePartialSet[ i ].first ) *
-                            combinedStateTransitionMatrices[ singlePartialSet[ i ].second ].block(
-                                    currentIndexInfo.first, 0, currentIndexInfo.second, fullParameterVector );
+                    partialMatrix += ( singlePartialSet[ i ].first ) * combinedStateTransitionMatrixBlocks[ currentBlockKey ];
                 }
             }
             else
