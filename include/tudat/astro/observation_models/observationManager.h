@@ -114,6 +114,26 @@ protected:
                 evaluationTime, true, arcDefiningBodies );
     }
 
+    //! Function to get a block of rows of the state transition and sensitivity matrix.
+    /*!
+     *  Function to get rows [ startRow, startRow + numberOfRows ) of the matrix returned by
+     *  getCombinedStateTransitionAndSensitivityMatrix. For multi- and hybrid-arc dynamics only these rows are assembled,
+     *  so the full matrix (which has one row block per arc, of which only the current arc's is non-zero) is never built.
+     *  \param evaluationTime Time at which matrices are to be evaluated
+     *  \param startRow First row of the concatenated matrix to return
+     *  \param numberOfRows Number of rows of the concatenated matrix to return
+     *  \return Requested rows of the concatenated state transition and sensitivity matrices at given time.
+     */
+    Eigen::MatrixXd getCombinedStateTransitionAndSensitivityMatrixBlock(
+            const double evaluationTime,
+            const int startRow,
+            const int numberOfRows,
+            const std::vector< std::string >& arcDefiningBodies = std::vector< std::string >( ) )
+    {
+        return stateTransitionMatrixInterface_->getFullCombinedStateTransitionAndSensitivityMatrixBlock(
+                evaluationTime, startRow, numberOfRows, true, arcDefiningBodies );
+    }
+
     //! Type of observable for which the instance of this class will compute observations/observation partials
     ObservableType observableType_;
 
