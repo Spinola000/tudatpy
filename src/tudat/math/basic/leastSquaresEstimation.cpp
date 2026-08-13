@@ -9,6 +9,7 @@
  *
  */
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 
@@ -70,9 +71,31 @@ Eigen::MatrixXd calculateInverseOfUpdatedCovarianceMatrix( const Eigen::MatrixXd
                                                            const Eigen::VectorXd& constraintRightHandside,
                                                            const double limitConditionNumberForWarning )
 {
-    // Add constraints to inverse covariance matrix if required
-    Eigen::MatrixXd inverseOfCovarianceMatrix = inverseOfAPrioriCovarianceMatrix +
-            designMatrix.transpose( ) * multiplyDesignMatrixByDiagonalWeightMatrix( designMatrix, diagonalOfWeightMatrix );
+    // Accumulate H^T W H over blocks of rows (observations), rather than forming the full weighted
+    // design matrix W H at once. The latter is a second matrix of the size of the design matrix,
+    // which dominates peak memory for estimation problems with many parameters and observations.
+    const Eigen::Index numberOfObservations = designMatrix.rows( );
+    const Eigen::Index numberOfParameters = designMatrix.cols( );
+
+    Eigen::MatrixXd inverseOfCovarianceMatrix = inverseOfAPrioriCovarianceMatrix;
+
+    if( numberOfObservations > 0 && numberOfParameters > 0 )
+    {
+        const Eigen::Index maximumBlockEntries = 8388608;  // 8 M doubles, i.e. 64 MB per block
+        const Eigen::Index blockSize =
+                std::max< Eigen::Index >( 1, std::min< Eigen::Index >( numberOfObservations,
+                                                                        maximumBlockEntries / numberOfParameters ) );
+
+        for( Eigen::Index startRow = 0; startRow < numberOfObservations; startRow += blockSize )
+        {
+            const Eigen::Index rowsInBlock = std::min< Eigen::Index >( blockSize, numberOfObservations - startRow );
+            const Eigen::MatrixXd weightedDesignMatrixBlock =
+                    diagonalOfWeightMatrix.segment( startRow, rowsInBlock ).asDiagonal( ) *
+                    designMatrix.middleRows( startRow, rowsInBlock );
+            inverseOfCovarianceMatrix +=
+                    designMatrix.middleRows( startRow, rowsInBlock ).transpose( ) * weightedDesignMatrixBlock;
+        }
+    }
     if( constraintMultiplier.rows( ) != 0 )
     {
         if( constraintMultiplier.rows( ) != constraintRightHandside.rows( ) )

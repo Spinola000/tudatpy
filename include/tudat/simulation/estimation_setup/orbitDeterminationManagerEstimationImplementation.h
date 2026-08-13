@@ -452,7 +452,8 @@ OrbitDeterminationManager< ObservationScalarType, TimeType, Dummy >::performPreE
     std::pair< Eigen::MatrixXd, Eigen::MatrixXd > designMatrices =
             separateEstimatedAndConsiderDesignMatrices( designMatrix, totalNumberOfObservations );
 
-    return std::make_pair( designMatrices, residuals );
+    // Moved, not copied: neither local is used after this return.
+    return std::make_pair( std::move( designMatrices ), std::move( residuals ) );
 }
 
 }  // namespace simulation_setup

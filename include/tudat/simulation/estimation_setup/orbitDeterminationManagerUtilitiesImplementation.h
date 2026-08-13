@@ -173,7 +173,7 @@ OrbitDeterminationManager< ObservationScalarType, TimeType, Dummy >::separateEst
     Eigen::MatrixXd designMatrixConsiderParameters =
             designMatrix.block( 0, numberEstimatedParameters_, numberObservations, numberConsiderParameters_ );
 
-    return std::make_pair( std::move( designMatrixEstimatedParameters ), std::move( designMatrixConsiderParameters ) );
+    return std::make_pair( std::move( designMatrix ), std::move( designMatrixConsiderParameters ) );
 }
 
 }  // namespace simulation_setup
